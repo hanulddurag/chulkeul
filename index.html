@@ -4,12 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>스마트 출결 관리 시스템</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@17/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-    <!-- Babel for JSX -->
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <style>
         body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #f3f4f6; }
@@ -22,45 +19,54 @@
 
     <script type="text/babel">
         const App = () => {
-            // Get today's date in YYYY-MM-DD format
             const getTodayString = () => {
-                const tzOffset = (new Date()).getTimezoneOffset() * 60000; // offset in milliseconds
+                const tzOffset = (new Date()).getTimezoneOffset() * 60000;
                 return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
             };
 
             const [currentDate, setCurrentDate] = React.useState(getTodayString());
             const [semester, setSemester] = React.useState(1);
+            
+            // Navigation states
             const [mainTab, setMainTab] = React.useState('input'); // 'input', 'status'
             const [gradeTab, setGradeTab] = React.useState('1'); // '1', '2', '3'
             const [selectedSubject, setSelectedSubject] = React.useState(null);
             const [records, setRecords] = React.useState([]);
 
-            // Form states for Homeroom input
-            const [inputGrade, setInputGrade] = React.useState('1');
-            const [inputClass, setInputClass] = React.useState('1');
+            // Homeroom selection states (new)
+            const [myGrade, setMyGrade] = React.useState('1');
+            const [myClass, setMyClass] = React.useState('1');
+
+            // Form states for student input
             const [inputNum, setInputNum] = React.useState('');
             const [inputName, setInputName] = React.useState('');
             const [inputReason, setInputReason] = React.useState('결석');
             const [inputPeriod, setInputPeriod] = React.useState('1');
 
-            // Google Sheets Sync States
             const [isSyncing, setIsSyncing] = React.useState(false);
             const [syncMessage, setSyncMessage] = React.useState('');
 
-            // Load data from LocalStorage on mount
             React.useEffect(() => {
                 const saved = localStorage.getItem('smartAttendanceRecords');
                 if (saved) {
                     try { setRecords(JSON.parse(saved)); } catch (e) { console.error("Data load error"); }
                 }
+                
+                const savedMyGrade = localStorage.getItem('smartMyGrade');
+                const savedMyClass = localStorage.getItem('smartMyClass');
+                if (savedMyGrade) setMyGrade(savedMyGrade);
+                if (savedMyClass) setMyClass(savedMyClass);
             }, []);
 
-            // Save data to LocalStorage whenever records change
             React.useEffect(() => {
                 localStorage.setItem('smartAttendanceRecords', JSON.stringify(records));
             }, [records]);
 
-            // Auto-detect semester based on date (Aug 18th is the start of Semester 2)
+            React.useEffect(() => {
+                localStorage.setItem('smartMyGrade', myGrade);
+                localStorage.setItem('smartMyClass', myClass);
+            }, [myGrade, myClass]);
+
             React.useEffect(() => {
                 const dateParts = currentDate.split('-');
                 if (dateParts.length === 3) {
@@ -72,20 +78,14 @@
                         setSemester(1);
                     }
                 }
-                // Reset subject selection when date changes
                 setSelectedSubject(null);
             }, [currentDate]);
 
-            const getDayOfWeek = (dateString) => {
-                const day = new Date(dateString).getDay();
-                return day; // 0: Sun, 1: Mon, ..., 6: Sat
-            };
-
+            const getDayOfWeek = (dateString) => new Date(dateString).getDay();
             const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
             const currentDayNum = getDayOfWeek(currentDate);
             const currentDayName = dayNames[currentDayNum];
 
-            // Define available subjects per grade and semester
             const getSubjectsList = (grade, sem) => {
                 if (grade === '1' && sem === 1) return ['주제선택', '동아리', '스포츠'];
                 if (grade === '1' && sem === 2) return ['과제탐구', '동아리', '스포츠'];
@@ -96,18 +96,16 @@
                 return [];
             };
 
-            // Check if a subject is scheduled for the current day, semester, and grade
             const isSubjectAvailableToday = (grade, subject, sem, dayNum) => {
                 if (dayNum === 1 && subject === '교양선택' && ((grade === '2' && sem === 1) || (grade === '3' && sem === 2))) return true;
                 if (dayNum === 2 && subject === '주제선택' && grade === '1' && sem === 1) return true;
                 if (dayNum === 3 && (subject === '과제탐구' || subject === '과제선택')) return true;
-                if (dayNum === 4 && subject === '스포츠') return true; // All grades have sports on Thursday
+                if (dayNum === 4 && subject === '스포츠') return true;
                 if (dayNum === 4 && subject === '생활외국어' && ((grade === '3' && sem === 1) || (grade === '2' && sem === 2))) return true;
                 if (dayNum === 5 && subject === '동아리') return true;
                 return false;
             };
 
-            // Get specific class periods for a subject
             const getSubjectPeriods = (grade, subject, sem, dayNum) => {
                 if (dayNum === 1 && subject === '교양선택') return [2, 3];
                 if (dayNum === 2 && subject === '주제선택') return [1, 2, 3, 4];
@@ -124,11 +122,10 @@
                         if (grade === '2' && subject === '생활외국어') return [5, 6, 7];
                     }
                 }
-                return null; // All day or unspecified
+                return null;
             };
 
             const isAbsentForSubject = (record, subjectPeriods) => {
-                // If it's a full day absence or no specific period is defined for the subject, they are absent
                 if (!subjectPeriods || record.reason === '결석' || record.reason === '기타') return true;
                 
                 const recPeriod = parseInt(record.period, 10);
@@ -137,15 +134,9 @@
                 const subjectStart = Math.min(...subjectPeriods);
                 const subjectEnd = Math.max(...subjectPeriods);
 
-                if (record.reason === '지각') {
-                    return recPeriod > subjectStart;
-                }
-                if (record.reason === '조퇴') {
-                    return recPeriod <= subjectEnd;
-                }
-                if (record.reason === '결과') {
-                    return subjectPeriods.includes(recPeriod);
-                }
+                if (record.reason === '지각') return recPeriod > subjectStart;
+                if (record.reason === '조퇴') return recPeriod <= subjectEnd;
+                if (record.reason === '결과') return subjectPeriods.includes(recPeriod);
                 return true;
             };
 
@@ -156,22 +147,20 @@
                 const newRecord = {
                     id: Date.now().toString(),
                     date: currentDate,
-                    grade: inputGrade,
-                    classNum: inputClass,
+                    grade: myGrade,       // 담임이 선택한 학년으로 자동 입력
+                    classNum: myClass,    // 담임이 선택한 반으로 자동 입력
                     studentNum: inputNum,
                     name: inputName,
                     reason: inputReason,
                     period: (inputReason === '지각' || inputReason === '조퇴' || inputReason === '결과') ? inputPeriod : null
                 };
 
-                // Accumulate records cleanly
                 setRecords([...records, newRecord]);
                 setInputNum('');
                 setInputName('');
             };
 
             const handleDeleteRecord = (id) => {
-                // Directly delete record without security password checks
                 setRecords(records.filter(r => r.id !== id));
             };
 
@@ -182,13 +171,15 @@
                 return <span className="font-semibold text-red-600">{record.reason}</span>;
             };
 
-            // Needs period selector?
             const needsPeriod = ['지각', '조퇴', '결과'].includes(inputReason);
-            // Current records for today
+            
+            // 모든 학생 기록 중 현재 날짜 데이터
             const todaysRecords = records.filter(r => r.date === currentDate);
+            // 현재 선택된 반의 데이터만 필터링 (입력 현황 및 전송용)
+            const myClassRecords = todaysRecords.filter(r => r.grade === myGrade && r.classNum === myClass);
 
             const handleSendInternal = async () => {
-                if (todaysRecords.length === 0) {
+                if (myClassRecords.length === 0) {
                     setSyncMessage('⚠️ 전송할 데이터가 없습니다.');
                     setTimeout(() => setSyncMessage(''), 3000);
                     return;
@@ -197,7 +188,7 @@
                 setIsSyncing(true);
                 setSyncMessage('시트 저장 시도 중...');
 
-                const payload = todaysRecords.map(r => ({
+                const payload = myClassRecords.map(r => ({
                     date: r.date,
                     grade: r.grade,
                     classNum: r.classNum,
@@ -206,7 +197,6 @@
                     reasonDetail: r.period ? `${r.reason}(${r.period}교시)` : r.reason
                 }));
 
-                // Call Google Apps Script Code.gs server function directly
                 if (typeof google !== 'undefined' && google.script && google.script.run) {
                     google.script.run
                         .withSuccessHandler(() => {
@@ -221,10 +211,9 @@
                         })
                         .saveAttendanceData(payload);
                 } else {
-                    // Demo Simulation when testing out of the actual Google Sheets frame
                     setTimeout(() => {
                         console.log("Transmitting payload via google.script.run:", payload);
-                        setSyncMessage('✅ (미리보기 화면) 구글 시트 전송 시뮬레이션 성공!');
+                        setSyncMessage('✅ (미리보기 화면) 시트 전송 시뮬레이션 성공!');
                         setIsSyncing(false);
                         setTimeout(() => setSyncMessage(''), 4000);
                     }, 1000);
@@ -249,10 +238,6 @@
                         </div>
                         
                         <div className="flex flex-wrap items-center gap-3">
-                            <div className="bg-gray-50 p-1.5 rounded-lg border border-gray-200 flex">
-                                <button onClick={() => setSemester(1)} className={`px-5 py-2 rounded-md text-xl font-extrabold transition-colors ${semester === 1 ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>1학기</button>
-                                <button onClick={() => setSemester(2)} className={`px-5 py-2 rounded-md text-xl font-extrabold transition-colors ${semester === 2 ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>2학기</button>
-                            </div>
                             <input 
                                 type="date" 
                                 value={currentDate} 
@@ -262,25 +247,25 @@
                         </div>
                     </div>
 
-                    {/* Navigation */}
-                    <div className="flex justify-center mb-6">
+                    {/* Main Navigation */}
+                    <div className="flex justify-center mb-6 fade-in">
                         <div className="flex space-x-2 bg-gray-200/80 p-2 rounded-2xl shadow-inner max-w-fit">
                             <button
-                                onClick={() => { setMainTab('input'); setSelectedSubject(null); }}
-                                className={`min-w-[180px] py-4 px-10 rounded-xl text-3xl font-extrabold transition-all duration-200 ${mainTab === 'input' ? 'bg-white text-blue-700 shadow-lg transform scale-[1.02]' : 'text-gray-600 hover:bg-gray-300/80 hover:text-gray-900'}`}
+                                onClick={() => setMainTab('input')}
+                                className={`py-4 px-10 rounded-xl text-3xl font-extrabold transition-all duration-200 ${mainTab === 'input' ? 'bg-white text-blue-700 shadow-lg transform scale-[1.02]' : 'text-gray-600 hover:bg-gray-300/80 hover:text-gray-900'}`}
                             >
                                 출결 입력
                             </button>
                             <button
                                 onClick={() => { setMainTab('status'); setSelectedSubject(null); }}
-                                className={`min-w-[200px] py-4 px-10 rounded-xl text-3xl font-extrabold transition-all duration-200 ${mainTab === 'status' ? 'bg-white text-blue-700 shadow-lg transform scale-[1.02]' : 'text-gray-600 hover:bg-gray-300/80 hover:text-gray-900'}`}
+                                className={`py-4 px-10 rounded-xl text-3xl font-extrabold transition-all duration-200 ${mainTab === 'status' ? 'bg-white text-blue-700 shadow-lg transform scale-[1.02]' : 'text-gray-600 hover:bg-gray-300/80 hover:text-gray-900'}`}
                             >
                                 선택 과목 출결 현황
                             </button>
                         </div>
                     </div>
 
-                    {/* Sub Navigation for Status */}
+                    {/* Sub Navigation for Status Tab ONLY */}
                     {mainTab === 'status' && (
                         <div className="flex justify-center mb-8 fade-in">
                             <div className="flex space-x-3 bg-blue-50/70 border border-blue-100 p-2 rounded-xl max-w-fit">
@@ -298,34 +283,42 @@
                     )}
 
                     {}
-                    {/* Content Area */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 min-h-[400px]">
                         
                         {/* 1. Homeroom Input View */}
                         {mainTab === 'input' && (
                             <div className="fade-in">
-                                <h2 className="text-2xl font-extrabold text-gray-800 mb-6 flex items-center gap-3">
-                                    <span className="bg-blue-100 text-blue-800 px-4 py-1.5 rounded-md text-xl">{currentDate} ({currentDayName})</span> 
-                                    출결 상황 입력
-                                </h2>
                                 
-                                {/* Form without password field */}
+                                {/* 담임 학급 설정 영역 (New) */}
+                                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                        </svg>
+                                        <h3 className="text-xl font-extrabold text-indigo-900">담임 학급 설정</h3>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <select value={myGrade} onChange={e => setMyGrade(e.target.value)} className="border border-indigo-200 rounded-lg shadow-sm focus:ring-indigo-500 p-2 text-xl font-bold bg-white text-indigo-800">
+                                            <option value="1">1학년</option>
+                                            <option value="2">2학년</option>
+                                            <option value="3">3학년</option>
+                                        </select>
+                                        <select value={myClass} onChange={e => setMyClass(e.target.value)} className="border border-indigo-200 rounded-lg shadow-sm focus:ring-indigo-500 p-2 text-xl font-bold bg-white text-indigo-800">
+                                            {[1,2,3,4,5,6,7,8,9,10].map(c => <option key={c} value={c}>{c}반</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 mb-6">
+                                    <span className="bg-blue-100 text-blue-800 px-4 py-1.5 rounded-md text-xl font-bold">{currentDate} ({currentDayName})</span> 
+                                    <h2 className="text-2xl font-extrabold text-gray-800">
+                                        {myGrade}학년 {myClass}반 출결 상황 입력
+                                    </h2>
+                                </div>
+                                
+                                {/* 간소화된 폼 (학년, 반 제외) */}
                                 <form onSubmit={handleAddRecord} className="bg-gray-50 p-5 md:p-6 rounded-xl border border-gray-200 mb-8 shadow-inner">
-                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-5">
-                                        <div className="col-span-1">
-                                            <label className="block text-sm font-bold text-gray-500 mb-2 uppercase">학년</label>
-                                            <select value={inputGrade} onChange={e => setInputGrade(e.target.value)} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 text-lg font-medium bg-white">
-                                                <option value="1">1학년</option>
-                                                <option value="2">2학년</option>
-                                                <option value="3">3학년</option>
-                                            </select>
-                                        </div>
-                                        <div className="col-span-1">
-                                            <label className="block text-sm font-bold text-gray-500 mb-2 uppercase">반</label>
-                                            <select value={inputClass} onChange={e => setInputClass(e.target.value)} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 text-lg font-medium bg-white">
-                                                {[1,2,3,4,5,6,7,8,9,10].map(c => <option key={c} value={c}>{c}반</option>)}
-                                            </select>
-                                        </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                                         <div className="col-span-1">
                                             <label className="block text-sm font-bold text-gray-500 mb-2 uppercase">번호</label>
                                             <input type="number" min="1" max="50" placeholder="번호" value={inputNum} onChange={e => setInputNum(e.target.value)} required className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 text-lg font-medium" />
@@ -357,16 +350,13 @@
                                 </form>
 
                                 {}
-                                {/* List Table Header */}
                                 <div className="flex flex-col md:flex-row justify-between items-center border-b pb-3 mb-4 gap-4">
-                                    <h3 className="text-2xl font-extrabold text-gray-700">오늘의 입력 현황 ({todaysRecords.length}명)</h3>
+                                    <h3 className="text-2xl font-extrabold text-gray-700">{myGrade}학년 {myClass}반 입력 현황 ({myClassRecords.length}명)</h3>
                                 </div>
-                                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+                                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm mb-8">
                                     <table className="w-full text-lg text-left">
                                         <thead className="bg-gray-100 text-gray-600 font-bold border-b border-gray-200">
                                             <tr>
-                                                <th className="px-5 py-4 text-center">학년</th>
-                                                <th className="px-5 py-4 text-center">반</th>
                                                 <th className="px-5 py-4 text-center">번호</th>
                                                 <th className="px-5 py-4">이름</th>
                                                 <th className="px-5 py-4">사유(교시)</th>
@@ -374,22 +364,20 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {todaysRecords.length === 0 ? (
-                                                <tr><td colSpan="6" className="px-5 py-10 text-center text-gray-500 font-medium text-xl">입력된 결석/지각생이 없습니다.</td></tr>
+                                            {myClassRecords.length === 0 ? (
+                                                <tr><td colSpan="4" className="px-5 py-10 text-center text-gray-500 font-medium text-xl">입력된 결석/지각생이 없습니다.</td></tr>
                                             ) : (
-                                                todaysRecords.map(record => (
+                                                myClassRecords.map(record => (
                                                     <tr key={record.id} className="bg-white hover:bg-gray-50 transition-colors">
-                                                        <td className="px-5 py-4 text-center font-bold text-gray-700">{record.grade}</td>
-                                                        <td className="px-5 py-4 text-center font-bold text-gray-700">{record.classNum}</td>
                                                         <td className="px-5 py-4 text-center font-bold text-gray-700">{record.studentNum}</td>
                                                         <td className="px-5 py-4 font-extrabold text-gray-900">{record.name}</td>
                                                         <td className="px-5 py-4 text-xl">{renderReasonText(record)}</td>
                                                         <td className="px-5 py-4 text-center">
                                                             <button 
                                                                 onClick={() => handleDeleteRecord(record.id)} 
-                                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors text-base font-bold flex items-center gap-1 mx-auto"
+                                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg transition-colors text-base font-bold flex items-center gap-1 mx-auto"
                                                             >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                                 </svg>
                                                                 삭제
@@ -402,9 +390,8 @@
                                     </table>
                                 </div>
 
-                                {}
                                 {/* 구글 앱스 스크립트 연동 전송 영역 */}
-                                <div className="mt-8 bg-blue-50/50 p-6 rounded-2xl border border-blue-200 shadow-inner flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="mt-4 bg-blue-50/50 p-6 rounded-2xl border border-blue-200 shadow-inner flex flex-col sm:flex-row items-center justify-between gap-4">
                                     <div>
                                         <h3 className="text-2xl font-extrabold text-blue-900 flex items-center gap-2">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
@@ -413,7 +400,7 @@
                                             </svg>
                                             구글 스프레드시트 일괄 전송
                                         </h3>
-                                        <p className="text-base text-blue-700 mt-1 font-medium">위 명단의 학생 데이터를 연동된 구글 시트로 안전하게 누적 전송합니다.</p>
+                                        <p className="text-base text-blue-700 mt-1 font-medium"><span className="font-bold">{myGrade}학년 {myClass}반</span> 학생 데이터를 연동된 구글 시트로 전송합니다.</p>
                                     </div>
                                     <div className="flex items-center gap-4 w-full sm:w-auto">
                                         {syncMessage && (
@@ -423,8 +410,8 @@
                                         )}
                                         <button 
                                             onClick={handleSendInternal}
-                                            disabled={isSyncing || todaysRecords.length === 0}
-                                            className={`w-full sm:w-auto px-8 py-4 rounded-xl font-extrabold text-white text-xl transition-all shadow-md ${isSyncing || todaysRecords.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 transform'}`}
+                                            disabled={isSyncing || myClassRecords.length === 0}
+                                            className={`w-full sm:w-auto px-8 py-4 rounded-xl font-extrabold text-white text-xl transition-all shadow-md ${isSyncing || myClassRecords.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 transform'}`}
                                         >
                                             {isSyncing ? '저장 중...' : '시트로 전송하기'}
                                         </button>
@@ -438,8 +425,9 @@
                         {mainTab === 'status' && (
                             <div className="fade-in">
                                 <div className="flex items-center justify-center gap-4 mb-8 flex-wrap">
+                                    <span className="bg-gray-100 text-gray-700 px-4 py-1.5 rounded-md text-xl font-bold">{currentDate} ({currentDayName})</span> 
                                     <h2 className="text-3xl font-extrabold text-gray-800">
-                                        {currentDate} ({currentDayName}) 선택 과목 출결 현황
+                                        선택 과목 출결 현황
                                     </h2>
                                 </div>
 
@@ -475,7 +463,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
                                                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                                                         </svg>
-                                                        {selectedSubject} 수업 결석자 명단
+                                                        {selectedSubject} 수업 결석자 명단 ({gradeTab}학년)
                                                     </h3>
                                                     <p className="text-lg text-green-700 mt-2 font-medium">
                                                         담임 선생님이 입력한 내역 중, 해당 수업 시간에 자리에 없는 학생만 자동으로 필터링되어 표시됩니다.
@@ -494,6 +482,7 @@
                                                     <tbody className="divide-y divide-gray-100">
                                                         {(() => {
                                                             const subjectPeriods = getSubjectPeriods(gradeTab, selectedSubject, semester, currentDayNum);
+                                                            // 모든 기록 중에서 필터링
                                                             const filteredAbsentees = todaysRecords.filter(r => 
                                                                 r.grade === gradeTab && isAbsentForSubject(r, subjectPeriods)
                                                             );
