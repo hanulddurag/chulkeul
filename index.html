@@ -378,7 +378,7 @@
                                                 myClassRecords.map(record => (
                                                     <tr key={record.id} className="bg-white hover:bg-gray-50 transition-colors">
                                                         <td className="px-5 py-4 text-center font-bold text-gray-700">{record.studentNum}</td>
-                                                        <td className="px-5 py-4 font-extrabold text-gray-900">{record.name}</td>
+                                                        <td className="px-5 py-4 font-extrabold text-gray-900">{maskName(record.name)}</td>
                                                         <td className="px-5 py-4 text-xl">{renderReasonText(record)}</td>
                                                         <td className="px-5 py-4 text-center">
                                                             <button 
